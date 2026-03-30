@@ -101,7 +101,7 @@ def main():
 
         # создание подписей
         labels = [
-            f"{COCO_CLASSES[class_id]} {conf:.2f}"
+            f"{class_id}  {COCO_CLASSES[class_id]} {conf:.2f}"
             for class_id, conf in zip(detections.class_id, detections.confidence)
         ]
 
@@ -123,7 +123,7 @@ def main():
         # каждые 10 кадров выводиться статистика
         if fn % 10 == 0:
             print(
-                f'{fn} | Pre: {dt0:.4f}s | Detect: {dt1:.4f}s | Annot: {dt2:.4f}s | Show: {dt3:.4f}s | Total: {tt:.4f}s')
+                f'{fn} | Pre: {dt0:.4f}s | Detect: {dt1:.4f}s | Annot: {dt2:.4f}s | Total: {tt:.4f}s')
 
         key = cv.waitKey(1)
         if key == ord('q'):
