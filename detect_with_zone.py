@@ -17,19 +17,25 @@ threshold = 0.5
 PERSON_CLASS_ID = 1
 
 ZONE_POLYGONS = [
-    np.array([
-        [100, 100],
-        [300, 100],
-        [300, 300],
-        [100, 300],
-        [50,200]
-    ], dtype=np.int32),
-    np.array([
-        [400, 200],
-        [600, 200],
-        [600, 400],
-        [400, 400]
-    ], dtype=np.int32)
+    np.array(
+        [
+            [296, 291],
+            [276, 310],
+            [258, 323],
+            [237, 335],
+            [204, 347],
+            [167, 361],
+            [121, 376],
+            [75, 383],
+            [34, 386],
+            [0, 386],
+            [0, 497],
+            [1, 536],
+            [755, 539],
+            [610, 293],
+        ],
+        dtype=np.int32,
+    ),
 ]
 
 ZONE_COLOR = (0, 255, 255)
@@ -72,7 +78,8 @@ def is_inside_zones(xyxy, polygons):
     x1, y1, x2, y2 = xyxy
 
     x_min, x_max = min(x1, x2), max(x1, x2)
-    y_min, y_max = min(y1, y2), max(y1, y2)
+    y_min, y_max = max(y1, y2)-(max(y1, y2)-min(y1,y2))/3, max(y1, y2)
+    print(x_min, x_max, y_min, y_max, min(y1,y2))
 
     bbox_corners = [
         (x_min, y_min),
