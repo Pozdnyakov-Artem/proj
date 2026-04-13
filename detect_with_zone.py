@@ -1,11 +1,44 @@
-import numpy as np
+import os
+import sys
+import time
+import queue
+import threading
+import logging
 import cv2 as cv
-import time, sys, os
-from rfdetr import RFDETRBase
-from rfdetr.util.coco_classes import COCO_CLASSES
-import supervision as sv
-import torch
+import numpy as np
 from PIL import Image
+from dotenv import load_dotenv
+from rfdetr import RFDETRBase
+from rfdetr.assets.coco_classes import COCO_CLASSES
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+import supervision as sv
+
+
+from models import Base, IMG
+from save_img_worker import save_worker
+from db_worker import db_worker
+
+logging.basicConfig(
+    level=logging.DEBUG,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    handlers=[logging.StreamHandler()]
+)
+
+load_dotenv()
+SAVE_DIR = os.getenv("SAVE_DIR", "/frames")
+DATABASE_URL = os.getenv("DATABASE_URL")
+CAM_ID = int(os.getenv("CAM_ID", "1"))
+
+
+engine = create_engine(DATABASE_URL, echo=False)
+SessionLocal = sessionmaker(bind=engine)
+Base.metadata.create_all(engine)
+
+
+frame_queue = queue.Queue(maxsize=50)
+db_queue = queue.Queue(maxsize=100)
+stop_event = threading.Event()
 
 in_file = r"C:\Users\gegan\Videos\cam25-1.avi"
 create_out_file = True
@@ -79,7 +112,7 @@ def is_inside_zones(xyxy, polygons):
 
     x_min, x_max = min(x1, x2), max(x1, x2)
     y_min, y_max = max(y1, y2)-(max(y1, y2)-min(y1,y2))/3, max(y1, y2)
-    print(x_min, x_max, y_min, y_max, min(y1,y2))
+    # print(x_min, x_max, y_min, y_max, min(y1,y2))
 
     bbox_corners = [
         (x_min, y_min),
@@ -147,6 +180,19 @@ def filter_detections(detections, class_id, polygons):
 
 
 def main():
+    t_save = threading.Thread(
+        target=save_worker,
+        args=(frame_queue, db_queue, stop_event, SAVE_DIR),
+        daemon=True
+    )
+    t_db = threading.Thread(
+        target=db_worker,
+        args=(db_queue, stop_event, SAVE_DIR, SessionLocal),
+        daemon=True
+    )
+    t_save.start()
+    t_db.start()
+
     cv.setNumThreads(1)
 
     model = RFDETRBase()
@@ -193,82 +239,96 @@ def main():
     if len(ZONE_POLYGONS) > 0:
         cv.fillPoly(zone_overlay, ZONE_POLYGONS, ZONE_COLOR)
 
-    while True:
-        t0 = time.perf_counter()
+    try:
+        while True:
+            t0 = time.perf_counter()
 
-        if not paused:
-            ret, frame = video_capture.read()
-            if not ret:
-                break
-            fn += 1
-            frameh = cv.resize(frame, None, fx=scale, fy=scale)
-            frame_rgb = cv.cvtColor(frameh, cv.COLOR_BGR2RGB)
-        else:
+            if not paused:
+                ret, frame = video_capture.read()
+                if not ret:
+                    break
+                fn += 1
+                frameh = cv.resize(frame, None, fx=scale, fy=scale)
+                frame_rgb = cv.cvtColor(frameh, cv.COLOR_BGR2RGB)
+            else:
+                t_show_start = time.perf_counter()
+                key = cv.waitKey(100)
+
+                if key == ord('p'):
+                    paused = False
+                continue
+
+            dt0 = time.perf_counter() - t0
+
+            t1 = time.perf_counter()
+
+            image_pil = Image.fromarray(frame_rgb)
+
+            all_detections = model.predict(image_pil, threshold=threshold)
+
+            dt1 = time.perf_counter() - t1
+
+            t2 = time.perf_counter()
+
+            detections = filter_detections(all_detections, PERSON_CLASS_ID, ZONE_POLYGONS)
+
+            nob = len(detections.class_id)
+            print(f'Frame {fn} people in zones: {nob}')
+
+            labels = [
+                f"{COCO_CLASSES[class_id]} {conf:.2f}"
+                for class_id, conf in zip(detections.class_id, detections.confidence)
+            ]
+
+            annotated_image = frameh.copy()
+
+            if len(ZONE_POLYGONS) > 0:
+                cv.addWeighted(zone_overlay, ZONE_ALPHA, annotated_image, 1 - ZONE_ALPHA, 0, annotated_image)
+                cv.polylines(annotated_image, ZONE_POLYGONS, True, ZONE_COLOR, 2)
+
+            if nob > 0:
+                annotated_image = bbox_annotator.annotate(annotated_image, detections)
+                annotated_image = label_annotator.annotate(annotated_image, detections, labels)
+                try:
+                    frame_queue.put_nowait((annotated_image.copy(), CAM_ID, time.time()))
+                except queue.Full:
+                    logging.warning("Очередь переполнена. Кадр пропущен.")
+
+            dt2 = time.perf_counter() - t2
+
             t_show_start = time.perf_counter()
-            key = cv.waitKey(100)
+            cv.imshow('Real-time Detection (Zones Active)', annotated_image)
+            key = cv.waitKey(1)
+            dt3 = time.perf_counter() - t_show_start
 
+            if create_out_file:
+                video_out.write(annotated_image)
+
+            tt = dt0 + dt1 + dt2 + dt3
+
+            if fn % 10 == 0:
+                print(
+                    f'{fn} | Pre: {dt0:.4f}s | Detect: {dt1:.4f}s | Annot: {dt2:.4f}s | Total: {tt:.4f}s')
+
+            if key == ord('q'):
+                break
             if key == ord('p'):
-                paused = False
-            continue
+                paused = True
 
-        dt0 = time.perf_counter() - t0
+    except KeyboardInterrupt:
+        logging.info("Ctrl+C")
 
-        t1 = time.perf_counter()
+    finally:
+        stop_event.set()
 
-        image_pil = Image.fromarray(frame_rgb)
+        frame_queue.join()
+        db_queue.join()
 
-        all_detections = model.predict(image_pil, threshold=threshold)
-
-        dt1 = time.perf_counter() - t1
-
-        t2 = time.perf_counter()
-
-        detections = filter_detections(all_detections, PERSON_CLASS_ID, ZONE_POLYGONS)
-
-        nob = len(detections.class_id)
-        print(f'Frame {fn} people in zones: {nob}')
-
-        labels = [
-            f"{COCO_CLASSES[class_id]} {conf:.2f}"
-            for class_id, conf in zip(detections.class_id, detections.confidence)
-        ]
-
-        annotated_image = frameh.copy()
-
-        if len(ZONE_POLYGONS) > 0:
-            cv.addWeighted(zone_overlay, ZONE_ALPHA, annotated_image, 1 - ZONE_ALPHA, 0, annotated_image)
-            cv.polylines(annotated_image, ZONE_POLYGONS, True, ZONE_COLOR, 2)
-
-        if nob > 0:
-            annotated_image = bbox_annotator.annotate(annotated_image, detections)
-            annotated_image = label_annotator.annotate(annotated_image, detections, labels)
-
-        dt2 = time.perf_counter() - t2
-
-        t_show_start = time.perf_counter()
-        cv.imshow('Real-time Detection (Zones Active)', annotated_image)
-        key = cv.waitKey(1)
-        dt3 = time.perf_counter() - t_show_start
-
-        if create_out_file:
-            video_out.write(annotated_image)
-
-        tt = dt0 + dt1 + dt2 + dt3
-
-        if fn % 10 == 0:
-            print(
-                f'{fn} | Pre: {dt0:.4f}s | Detect: {dt1:.4f}s | Annot: {dt2:.4f}s | Total: {tt:.4f}s')
-
-        if key == ord('q'):
-            break
-        if key == ord('p'):
-            paused = True
+        cv.destroyAllWindows()
+        video_capture.release()
 
     cv.destroyAllWindows()
     video_capture.release()
-
-    if create_out_file:
-        video_out.release()
 
 
 if __name__ == '__main__':
