@@ -1,3 +1,4 @@
+from rfdetr import RFDETRBase
 import os
 import sys
 import time
@@ -8,7 +9,6 @@ import cv2 as cv
 import numpy as np
 from PIL import Image
 from dotenv import load_dotenv
-from rfdetr import RFDETRBase
 from rfdetr.assets.coco_classes import COCO_CLASSES
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -16,7 +16,7 @@ import supervision as sv
 
 
 from models import Base, IMG
-from save_img_worker import save_worker
+#from save_img_worker import save_worker
 from db_worker import db_worker
 
 logging.basicConfig(
@@ -27,20 +27,20 @@ logging.basicConfig(
 
 load_dotenv()
 SAVE_DIR = os.getenv("SAVE_DIR", "/frames")
-DATABASE_URL = os.getenv("DATABASE_URL")
+#DATABASE_URL = os.getenv("DATABASE_URL")
 CAM_ID = int(os.getenv("CAM_ID", "1"))
 
 
-engine = create_engine(DATABASE_URL, echo=False)
-SessionLocal = sessionmaker(bind=engine)
-Base.metadata.create_all(engine)
+#engine = create_engine(DATABASE_URL, echo=False)
+#SessionLocal = sessionmaker(bind=engine)
+#Base.metadata.create_all(engine)
 
 
 frame_queue = queue.Queue(maxsize=50)
 db_queue = queue.Queue(maxsize=100)
 stop_event = threading.Event()
 
-in_file = r"C:\Users\gegan\Videos\cam25-1.avi"
+in_file = r"cam25-1.avi"
 create_out_file = True
 out_file = 'out.avi'
 
@@ -50,8 +50,6 @@ threshold = 0.5
 PERSON_CLASS_ID = 1
 
 ZONE_POLYGONS = [
-    np.array(
-        [
             [296, 291],
             [276, 310],
             [258, 323],
@@ -66,13 +64,20 @@ ZONE_POLYGONS = [
             [1, 536],
             [755, 539],
             [610, 293],
-        ],
-        dtype=np.int32,
-    ),
 ]
+ZONE_POLYGONS_STANDBY = []
 
 ZONE_COLOR = (0, 255, 255)
 ZONE_ALPHA = 0.3
+
+def mouse_callback(event, x, y, flags, param):
+    global ZONE_POLYGONS_STANDBY
+    global ZONE_POLYGONS
+    if event == cv.EVENT_LBUTTONDOWN:
+        ZONE_POLYGONS_STANDBY.append([x,y])
+    elif event== cv.EVENT_RBUTTONDOWN and len(ZONE_POLYGONS_STANDBY)>1:
+        ZONE_POLYGONS=list(ZONE_POLYGONS_STANDBY)
+        ZONE_POLYGONS_STANDBY=[]
 
 def segments_intersect(p1, p2, p3, p4):
     def orientation(p, q, r):
@@ -163,6 +168,7 @@ def filter_detections(detections, class_id, polygons):
     if not np.any(class_mask):
         return sv.Detections.empty()
 
+    detections.data=dict()
     people_detections = detections[class_mask]
 
     if len(people_detections) == 0:
@@ -180,22 +186,22 @@ def filter_detections(detections, class_id, polygons):
 
 
 def main():
-    t_save = threading.Thread(
-        target=save_worker,
-        args=(frame_queue, db_queue, stop_event, SAVE_DIR),
-        daemon=True
-    )
-    t_db = threading.Thread(
-        target=db_worker,
-        args=(db_queue, stop_event, SAVE_DIR, SessionLocal),
-        daemon=True
-    )
-    t_save.start()
-    t_db.start()
+    WINDOW_NAME='Real-time Detection (Zones Active)'
+    #t_save = threading.Thread(
+    #    target=save_worker,
+    #    args=(frame_queue, db_queue, stop_event, SAVE_DIR),
+    #    daemon=True
+    #)
+    #t_db = threading.Thread(
+    #    target=db_worker,
+    #    args=(db_queue, stop_event, SAVE_DIR, SessionLocal),
+    #    daemon=True
+    #)
+    #t_save.start()
+    #t_db.start()
 
     cv.setNumThreads(1)
-
-    model = RFDETRBase()
+    model = RFDETRBase(device="cuda")
     model.optimize_for_inference()
 
     video_capture = cv.VideoCapture(in_file)
@@ -235,12 +241,12 @@ def main():
     fn = 0
     paused = False
 
-    zone_overlay = np.zeros((hh, wh, 3), dtype=np.uint8)
-    if len(ZONE_POLYGONS) > 0:
-        cv.fillPoly(zone_overlay, ZONE_POLYGONS, ZONE_COLOR)
 
     try:
         while True:
+            zone_overlay = np.zeros((hh, wh, 3), dtype=np.uint8)
+            if len(ZONE_POLYGONS) > 0:
+                cv.fillPoly(zone_overlay, [np.array(ZONE_POLYGONS)], ZONE_COLOR)
             t0 = time.perf_counter()
 
             if not paused:
@@ -270,10 +276,10 @@ def main():
 
             t2 = time.perf_counter()
 
-            detections = filter_detections(all_detections, PERSON_CLASS_ID, ZONE_POLYGONS)
+            detections = filter_detections(all_detections, PERSON_CLASS_ID, [np.array(ZONE_POLYGONS)])
 
             nob = len(detections.class_id)
-            print(f'Frame {fn} people in zones: {nob}')
+            #print(f'Frame {fn} people in zones: {nob}')
 
             labels = [
                 f"{COCO_CLASSES[class_id]} {conf:.2f}"
@@ -281,10 +287,12 @@ def main():
             ]
 
             annotated_image = frameh.copy()
-
-            if len(ZONE_POLYGONS) > 0:
+            
+            if len(ZONE_POLYGONS) > 1:
                 cv.addWeighted(zone_overlay, ZONE_ALPHA, annotated_image, 1 - ZONE_ALPHA, 0, annotated_image)
-                cv.polylines(annotated_image, ZONE_POLYGONS, True, ZONE_COLOR, 2)
+                cv.polylines(annotated_image, [np.array(ZONE_POLYGONS)], True, ZONE_COLOR, 2)
+            if len(ZONE_POLYGONS_STANDBY) > 1:
+                cv.polylines(annotated_image, [np.array(ZONE_POLYGONS_STANDBY)],True,(255,255,0),thickness=1)
 
             if nob > 0:
                 annotated_image = bbox_annotator.annotate(annotated_image, detections)
@@ -297,7 +305,8 @@ def main():
             dt2 = time.perf_counter() - t2
 
             t_show_start = time.perf_counter()
-            cv.imshow('Real-time Detection (Zones Active)', annotated_image)
+            cv.imshow(WINDOW_NAME, annotated_image)
+            cv.setMouseCallback(WINDOW_NAME,mouse_callback)
             key = cv.waitKey(1)
             dt3 = time.perf_counter() - t_show_start
 
@@ -322,7 +331,7 @@ def main():
         stop_event.set()
 
         frame_queue.join()
-        db_queue.join()
+        #db_queue.join()
 
         cv.destroyAllWindows()
         video_capture.release()
