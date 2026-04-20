@@ -40,7 +40,7 @@ frame_queue = queue.Queue(maxsize=50)
 db_queue = queue.Queue(maxsize=100)
 stop_event = threading.Event()
 
-in_file = r"cam25-1.avi"
+in_file = os.getenv("PATH_CAM")
 create_out_file = True
 out_file = 'out.avi'
 
@@ -50,25 +50,29 @@ threshold = 0.5
 PERSON_CLASS_ID = 1
 
 ZONE_POLYGONS = [
-            [296, 291],
-            [276, 310],
-            [258, 323],
-            [237, 335],
-            [204, 347],
-            [167, 361],
-            [121, 376],
-            [75, 383],
-            [34, 386],
-            [0, 386],
-            [0, 497],
-            [1, 536],
-            [755, 539],
-            [610, 293],
+        # np.array([
+            # [296, 291],
+            # [276, 310],
+            # [258, 323],
+            # [237, 335],
+            # [204, 347],
+            # [167, 361],
+            # [121, 376],
+            # [75, 383],
+            # [34, 386],
+            # [0, 386],
+            # [0, 497],
+            # [1, 536],
+            # [755, 539],
+            # [610, 293]], dtype=np.int32),
 ]
 ZONE_POLYGONS_STANDBY = []
 
 ZONE_COLOR = (0, 255, 255)
 ZONE_ALPHA = 0.3
+
+def make_polygon(points):
+    return np.array(points, dtype=np.int32).reshape(-1, 2)
 
 def mouse_callback(event, x, y, flags, param):
     global ZONE_POLYGONS_STANDBY
@@ -76,7 +80,8 @@ def mouse_callback(event, x, y, flags, param):
     if event == cv.EVENT_LBUTTONDOWN:
         ZONE_POLYGONS_STANDBY.append([x,y])
     elif event== cv.EVENT_RBUTTONDOWN and len(ZONE_POLYGONS_STANDBY)>1:
-        ZONE_POLYGONS=list(ZONE_POLYGONS_STANDBY)
+        poly_np = make_polygon(ZONE_POLYGONS_STANDBY)
+        ZONE_POLYGONS.append(poly_np)
         ZONE_POLYGONS_STANDBY=[]
 
 def segments_intersect(p1, p2, p3, p4):
@@ -160,6 +165,9 @@ def is_inside_zones(xyxy, polygons):
 
 
 def filter_detections(detections, class_id, polygons):
+    if not polygons:
+        return sv.Detections.empty()
+
     if len(detections.class_id) == 0:
         return detections
 
@@ -201,7 +209,7 @@ def main():
     #t_db.start()
 
     cv.setNumThreads(1)
-    model = RFDETRBase(device="cuda")
+    model = RFDETRBase()
     model.optimize_for_inference()
 
     video_capture = cv.VideoCapture(in_file)
@@ -245,8 +253,8 @@ def main():
     try:
         while True:
             zone_overlay = np.zeros((hh, wh, 3), dtype=np.uint8)
-            if len(ZONE_POLYGONS) > 0:
-                cv.fillPoly(zone_overlay, [np.array(ZONE_POLYGONS)], ZONE_COLOR)
+            if ZONE_POLYGONS:
+                cv.fillPoly(zone_overlay, ZONE_POLYGONS, ZONE_COLOR)
             t0 = time.perf_counter()
 
             if not paused:
@@ -276,7 +284,7 @@ def main():
 
             t2 = time.perf_counter()
 
-            detections = filter_detections(all_detections, PERSON_CLASS_ID, [np.array(ZONE_POLYGONS)])
+            detections = filter_detections(all_detections, PERSON_CLASS_ID, ZONE_POLYGONS)
 
             nob = len(detections.class_id)
             #print(f'Frame {fn} people in zones: {nob}')
@@ -287,10 +295,11 @@ def main():
             ]
 
             annotated_image = frameh.copy()
-            
-            if len(ZONE_POLYGONS) > 1:
+
+            if ZONE_POLYGONS:
                 cv.addWeighted(zone_overlay, ZONE_ALPHA, annotated_image, 1 - ZONE_ALPHA, 0, annotated_image)
-                cv.polylines(annotated_image, [np.array(ZONE_POLYGONS)], True, ZONE_COLOR, 2)
+                cv.polylines(annotated_image, ZONE_POLYGONS, isClosed=True, color=ZONE_COLOR, thickness=2)
+
             if len(ZONE_POLYGONS_STANDBY) > 1:
                 cv.polylines(annotated_image, [np.array(ZONE_POLYGONS_STANDBY)],True,(255,255,0),thickness=1)
 
