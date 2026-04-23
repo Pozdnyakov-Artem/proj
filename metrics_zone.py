@@ -9,117 +9,29 @@ from PIL import Image
 from collections import defaultdict
 
 # ================= НАСТРОЙКИ =================
-in_file = r"./cam25-1.avi"
-labels_dir = r"./labels"  # Папка с аннотациями
+in_file = r"/home/julia/Рабочий стол/thermo.mp4"
+labels_dir = (
+    r"/home/julia/Рабочий стол/runs/detect/track-6/labels"  # Папка с аннотациями
+)
 create_out_file = True
 out_file = "out.avi"
-metrics_file = "metrics_report.txt"
+metrics_file = "thermo_metrics_report.txt"
 
 scale = 0.5
 threshold = 0.5
 iou_threshold = 0.5  # Порог IoU для совпадения детекции с GT
 
 PERSON_CLASS_ID = 1  # COCO class_id для person
-
-ZONE_POLYGONS = [
-    np.array(
-        [
-            [296, 291],
-            [276, 310],
-            [258, 323],
-            [237, 335],
-            [204, 347],
-            [167, 361],
-            [121, 376],
-            [75, 383],
-            [34, 386],
-            [0, 386],
-            [0, 497],
-            [1, 536],
-            [755, 539],
-            [610, 293],
-        ],
-        dtype=np.int32,
-    ),
-]
-
-ZONE_COLOR = (0, 255, 255)
-ZONE_ALPHA = 0.3
 # ===============================================
 
 
-def segments_intersect(p1, p2, p3, p4):
-    """Проверка пересечения двух отрезков"""
-
-    def orientation(p, q, r):
-        val = (q[1] - p[1]) * (r[0] - q[0]) - (q[0] - p[0]) * (r[1] - q[1])
-        if val == 0:
-            return 0
-        return 1 if val > 0 else 2
-
-    def on_segment(p, q, r):
-        if min(p[0], r[0]) <= q[0] <= max(p[0], r[0]) and min(p[1], r[1]) <= q[
-            1
-        ] <= max(p[1], r[1]):
-            return True
-        return False
-
-    o1, o2 = orientation(p1, p2, p3), orientation(p1, p2, p4)
-    o3, o4 = orientation(p3, p4, p1), orientation(p3, p4, p2)
-
-    if o1 != o2 and o3 != o4:
-        return True
-    if o1 == 0 and on_segment(p1, p3, p2):
-        return True
-    if o2 == 0 and on_segment(p1, p4, p2):
-        return True
-    if o3 == 0 and on_segment(p3, p1, p4):
-        return True
-    if o4 == 0 and on_segment(p3, p2, p4):
-        return True
-    return False
-
-
-def is_inside_zones(xyxy, polygons):
-    """Проверка: пересекается ли bbox с полигоном"""
-    x1, y1, x2, y2 = xyxy
-    x_min, x_max = min(x1, x2), max(x1, x2)
-    y_min, y_max = min(y1, y2), max(y1, y2)
-    bbox_corners = [(x_min, y_min), (x_max, y_min), (x_max, y_max), (x_min, y_max)]
-    bbox_edges = [
-        (bbox_corners[0], bbox_corners[1]),
-        (bbox_corners[1], bbox_corners[2]),
-        (bbox_corners[2], bbox_corners[3]),
-        (bbox_corners[3], bbox_corners[0]),
-    ]
-
-    for poly in polygons:
-        # Угол внутри полигона
-        for corner in bbox_corners:
-            if cv.pointPolygonTest(poly, corner, False) >= 0:
-                return True
-        # Вершина полигона внутри bbox
-        for vertex in poly:
-            if x_min <= vertex[0] <= x_max and y_min <= vertex[1] <= y_max:
-                return True
-        # Пересечение рёбер
-        poly_vertices = poly.tolist() if hasattr(poly, "tolist") else poly
-        n = len(poly_vertices)
-        for i in range(n):
-            p1, p2 = tuple(poly_vertices[i]), tuple(poly_vertices[(i + 1) % n])
-            for bbox_edge in bbox_edges:
-                if segments_intersect(bbox_edge[0], bbox_edge[1], p1, p2):
-                    return True
-    return False
-
-
-def load_ground_truth(frame_idx, w, h, polygons):
+def load_ground_truth(frame_idx, w, h):
     """
     Загрузка GT аннотаций для кадра.
     Формат: class cx cy w h track_id (нормализованные координаты)
     Возвращает: список словарей {xyxy, class_id, track_id}
     """
-    gt_path = os.path.join(labels_dir, f"cam25-1_{frame_idx}.txt")
+    gt_path = os.path.join(labels_dir, f"thermo_{frame_idx}.txt")
     gt_boxes = []
 
     if not os.path.exists(gt_path):
@@ -142,11 +54,10 @@ def load_ground_truth(frame_idx, w, h, polygons):
                 y2 = cy_px + bh_px / 2
                 xyxy = np.array([x1, y1, x2, y2])
 
-                # Фильтрация по полигону
-                if is_inside_zones(xyxy, polygons):
-                    gt_boxes.append(
-                        {"xyxy": xyxy, "class_id": int(cls), "track_id": int(track_id)}
-                    )
+                # Убрана проверка на полигон, добавляем все GT объекты
+                gt_boxes.append(
+                    {"xyxy": xyxy, "class_id": int(cls), "track_id": int(track_id)}
+                )
     except Exception as e:
         print(f"Warning: Error reading {gt_path}: {e}")
 
@@ -196,7 +107,6 @@ def match_detections_to_gt(pred_detections, gt_boxes, iou_thresh=0.5):
     for i, (xyxy, conf, cls) in enumerate(
         zip(pred_detections.xyxy, pred_detections.confidence, pred_detections.class_id)
     ):
-        # Используем индекс как псевдо-track_id для детекций без трекинга
         track_id = (
             int(pred_detections.tracker_id[i])
             if pred_detections.tracker_id is not None
@@ -265,20 +175,14 @@ def match_detections_to_gt(pred_detections, gt_boxes, iou_thresh=0.5):
     return tp, max(0, fp), max(0, fn), iou_scores, dice_scores
 
 
-def filter_detections(detections, class_id, polygons):
-    """Фильтрация детекций по классу и полигону"""
+def filter_detections(detections, class_id):
+    """Фильтрация детекций только по классу (без полигона)"""
     if len(detections.class_id) == 0:
         return detections
     class_mask = detections.class_id == class_id
     if not np.any(class_mask):
         return sv.Detections.empty()
-    people_detections = detections[class_mask]
-    if len(people_detections) == 0:
-        return sv.Detections.empty()
-    zone_mask = np.array(
-        [is_inside_zones(xyxy, polygons) for xyxy in people_detections.xyxy], dtype=bool
-    )
-    return people_detections[zone_mask]
+    return detections[class_mask]
 
 
 def main():
@@ -336,9 +240,7 @@ def main():
 
     fn = 0
     paused = False
-    zone_overlay = np.zeros((hh, wh, 3), dtype=np.uint8)
-    if len(ZONE_POLYGONS) > 0:
-        cv.fillPoly(zone_overlay, ZONE_POLYGONS, ZONE_COLOR)
+    # Убрано создание zone_overlay
 
     print(f"\n{'='*60}")
     print(
@@ -371,11 +273,11 @@ def main():
         dt1 = time.perf_counter() - t1
         t2 = time.perf_counter()
 
-        # Фильтрация детекций по зоне
-        detections = filter_detections(all_detections, PERSON_CLASS_ID, ZONE_POLYGONS)
+        # Фильтрация детекций только по классу
+        detections = filter_detections(all_detections, PERSON_CLASS_ID)
 
         # Загрузка GT для текущего кадра
-        gt_boxes = load_ground_truth(fn, wh, hh, ZONE_POLYGONS)
+        gt_boxes = load_ground_truth(fn, wh, hh)
 
         # Сопоставление и подсчёт метрик
         tp, fp, fn_gt, iou_scores, dice_scores = match_detections_to_gt(
@@ -420,16 +322,7 @@ def main():
         ]
         annotated_image = frameh.copy()
 
-        if len(ZONE_POLYGONS) > 0:
-            cv.addWeighted(
-                zone_overlay,
-                ZONE_ALPHA,
-                annotated_image,
-                1 - ZONE_ALPHA,
-                0,
-                annotated_image,
-            )
-            cv.polylines(annotated_image, ZONE_POLYGONS, True, ZONE_COLOR, 2)
+        # Убрана отрисовка полигона и наложение зоны
 
         if len(detections) > 0:
             annotated_image = bbox_annotator.annotate(annotated_image, detections)
@@ -439,7 +332,7 @@ def main():
 
         dt2 = time.perf_counter() - t2
         t_show_start = time.perf_counter()
-        cv.imshow("Real-time Detection (Zones Active)", annotated_image)
+        cv.imshow("Real-time Detection", annotated_image)
         key = cv.waitKey(1)
         dt3 = time.perf_counter() - t_show_start
 
@@ -474,11 +367,11 @@ def main():
 
     # Вывод в консоль
     print(f"\n{'='*60}")
-    print(f"РЕЗУЛЬТАТЫ ТЕСТИРОВАНИЯ (зона полигона)")
+    print(f"РЕЗУЛЬТАТЫ ТЕСТИРОВАНИЯ (полный кадр)")
     print(f"{'='*60}")
     print(f"Всего кадров обработано: {fn}")
-    print(f"Всего предсказаний в зоне: {total_tp + total_fp}")
-    print(f"Всего GT объектов в зоне: {total_tp + total_fn}")
+    print(f"Всего предсказаний: {total_tp + total_fp}")
+    print(f"Всего GT объектов: {total_tp + total_fn}")
     print(f"\nМетрики:")
     print(f"  Precision: {precision:.4f} ({precision*100:.2f}%)")
     print(f"  Recall:    {recall:.4f} ({recall*100:.2f}%)")
@@ -489,7 +382,7 @@ def main():
 
     # Сохранение в файл
     with open(metrics_file, "w", encoding="utf-8") as f:
-        f.write(f"RF-DETR Testing Report - Zone Evaluation\n")
+        f.write(f"RF-DETR Testing Report - Full Frame Evaluation\n")
         f.write(f"Video: {in_file}\n")
         f.write(f"Labels: {labels_dir}\n")
         f.write(f"Threshold: {threshold}, IoU match: {iou_threshold}\n")

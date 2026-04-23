@@ -1,0 +1,17 @@
+RF-DETR Testing Report - Zone Evaluation
+Video: ./cam25-1.avi
+Labels: ./labels
+Threshold: 0.5, IoU match: 0.5
+Frames processed: 10959
+
+AGGREGATED METRICS:
+  Precision: 0.9912 (99.12%)
+  Recall:    0.9621 (96.21%)
+  F1-Score:  0.9764
+  Mean IoU:  0.9228
+  Mean Dice: 0.9593
+
+CONFUSION:
+  True Positives:  4388
+  False Positives: 39
+  False Negatives: 173

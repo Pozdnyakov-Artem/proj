@@ -1,0 +1,18 @@
+RF-DETR Testing Report - Full Frame Evaluation
+Video: /home/julia/Рабочий стол/rain.mp4
+Labels: /home/julia/Рабочий стол/runs/detect/track-4/labels
+Threshold: 0.5, IoU match: 0.5
+Frames processed: 725
+
+AGGREGATED METRICS:
+  Precision: 0.9272 (92.72%)
+  Recall:    0.9243 (92.43%)
+  F1-Score:  0.9258
+  Mean IoU:  0.8278
+  Mean Dice: 0.9029
+
+CONFUSION:
+  True Positives:  586
+  False Positives: 46
+  False Negatives: 48
+
