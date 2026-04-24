@@ -10,14 +10,9 @@ import numpy as np
 from PIL import Image
 from dotenv import load_dotenv
 from rfdetr.assets.coco_classes import COCO_CLASSES
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
 import supervision as sv
 
-
-from models import Base, IMG
 #from save_img_worker import save_worker
-from db_worker import db_worker
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -26,7 +21,7 @@ logging.basicConfig(
 )
 
 load_dotenv()
-SAVE_DIR = os.getenv("SAVE_DIR", "/frames")
+SAVE_DIR = os.getenv("SAVE_DIR", "../frames")
 #DATABASE_URL = os.getenv("DATABASE_URL")
 CAM_ID = int(os.getenv("CAM_ID", "1"))
 
@@ -42,7 +37,7 @@ stop_event = threading.Event()
 
 in_file = os.getenv("PATH_CAM")
 create_out_file = True
-out_file = 'out.avi'
+out_file = '../out.avi'
 
 scale = 0.5
 threshold = 0.5

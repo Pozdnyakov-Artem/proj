@@ -3,7 +3,7 @@ services:
     image: postgres:15-alpine
     restart: unless-stopped
     env_file:
-      - ./.env
+      - ../.env
     ports:
       - "5433:5432"
     volumes:
@@ -17,25 +17,27 @@ services:
       retries: 5
   ai_module:
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: ../Dockerfile
     restart: unless-stopped
     env_file:
-      - ./.env
+      - ../.env
     networks:
       - detector_network
     depends_on:
       db:
         condition: service_healthy
     volumes:
+      - ./model:/app/model:ro
+      - ./video:/app/video:ro
       - ./docker_frames:/app/frames
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [ gpu ]
+#    deploy:
+#      resources:
+#        reservations:
+#          devices:
+#            - driver: nvidia
+#              count: all
+#              capabilities: [ gpu ]
 
 volumes:
   pg_data:
