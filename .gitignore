@@ -2,3 +2,5 @@ rf-detr-base.pth
 *.pth
 *.pt
 *.bin
+*.avi
+*.mp4
