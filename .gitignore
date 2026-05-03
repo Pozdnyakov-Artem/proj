@@ -1,4 +1,4 @@
-*.pt
-*.bin
+.env
+*.pth
 *.avi
-*.mp4
+frames

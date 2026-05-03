@@ -1,0 +1,47 @@
+services:
+  db:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    env_file:
+      - ../.env
+    ports:
+      - "5433:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    networks:
+      - detector_network
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-video_ai}" ]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+  ai_module:
+    build:
+      context: ..
+      dockerfile: ../Dockerfile
+    restart: unless-stopped
+    env_file:
+      - ../.env
+    networks:
+      - detector_network
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./model:/app/model:ro
+      - ./video:/app/video:ro
+      - ./docker_frames:/app/frames
+#    deploy:
+#      resources:
+#        reservations:
+#          devices:
+#            - driver: nvidia
+#              count: all
+#              capabilities: [ gpu ]
+
+volumes:
+  pg_data:
+
+networks:
+  detector_network:
+    driver: bridge
