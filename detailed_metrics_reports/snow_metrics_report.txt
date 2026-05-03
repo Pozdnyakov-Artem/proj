@@ -1,0 +1,16 @@
+RF-DETR Testing Report - Full Frame Evaluation
+Threshold: 0.5, IoU match: 0.5
+Frames processed: 14810
+
+AGGREGATED METRICS:
+  Precision: 0.8954 (89.54%)
+  Recall:    0.8287 (82.87%)
+  F1-Score:  0.8608
+  Mean IoU:  0.8710
+  Mean Dice: 0.9284
+
+CONFUSION:
+  True Positives:  13374
+  False Positives: 1562
+  False Negatives: 2765
+
