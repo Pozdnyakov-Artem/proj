@@ -1,6 +1,4 @@
 RF-DETR Testing Report - Zone Evaluation
-Video: ./cam25-1.avi
-Labels: ./labels
 Threshold: 0.5, IoU match: 0.5
 Frames processed: 10959
 

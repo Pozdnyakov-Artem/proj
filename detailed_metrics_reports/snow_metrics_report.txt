@@ -1,6 +1,4 @@
 RF-DETR Testing Report - Full Frame Evaluation
-Video: /home/julia/Рабочий стол/snow.mp4
-Labels: /home/julia/Рабочий стол/runs/detect/track-9/labels
 Threshold: 0.5, IoU match: 0.5
 Frames processed: 14810
 
