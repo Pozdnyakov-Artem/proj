@@ -9,13 +9,13 @@ from PIL import Image
 from collections import defaultdict
 
 # ================= НАСТРОЙКИ =================
-in_file = r"/home/julia/Рабочий стол/thermo.mp4"
+in_file = r"/home/julia/Рабочий стол/snow.mp4"
 labels_dir = (
-    r"/home/julia/Рабочий стол/runs/detect/track-6/labels"  # Папка с аннотациями
+    r"/home/julia/Рабочий стол/runs/detect/track-9/labels"  # Папка с аннотациями
 )
 create_out_file = True
 out_file = "out.avi"
-metrics_file = "thermo_metrics_report.txt"
+metrics_file = "snow_metrics_report.txt"
 
 scale = 0.5
 threshold = 0.5
@@ -31,7 +31,7 @@ def load_ground_truth(frame_idx, w, h):
     Формат: class cx cy w h track_id (нормализованные координаты)
     Возвращает: список словарей {xyxy, class_id, track_id}
     """
-    gt_path = os.path.join(labels_dir, f"thermo_{frame_idx}.txt")
+    gt_path = os.path.join(labels_dir, f"snow_{frame_idx}.txt")
     gt_boxes = []
 
     if not os.path.exists(gt_path):
