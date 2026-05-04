@@ -10,6 +10,7 @@ import tkinter as tk
 from tkinter import simpledialog
 import json
 import os
+import tbot
 
 from config import (
     SAVE_DIR, CAMERAS, DEFAULT_CAM_ID, DETECTION_THRESHOLD,
@@ -79,7 +80,7 @@ def save_camera_settings(settings: dict):
 def main():
     Base.metadata.create_all(bind=engine)
 
-    detector = Detector(threshold=DETECTION_THRESHOLD)
+    detector = Detector(threshold=DETECTION_THRESHOLD,device="cpu")
     stream_mgr = StreamManager()
     zone_drawer = ZoneDrawer("Detection UI")
 
@@ -221,6 +222,7 @@ def main():
                                     "confidence": float(detections.confidence[0]),
                                     "count": len(detections)
                                 }
+                                tbot.send_alert(stream_mgr.current_id,detection_info["count"],[detection_info["class_name"]])
 
                             frame_queue.put_nowait((
                                 annotated.copy(),
