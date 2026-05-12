@@ -10,6 +10,7 @@ from tkinter import simpledialog
 import json
 import os
 import tbot
+import torch
 
 from config import (
     SAVE_DIR, CAMERAS, DEFAULT_CAM_ID, DETECTION_THRESHOLD,
@@ -130,7 +131,30 @@ def run_camera_setup() -> int | None:
     cv.destroyAllWindows()
     return None  # Отмена
 
+def fix_checkpoint(input_path, output_path):
+    print(f"Загрузка: {input_path}")
+    checkpoint = torch.load(input_path, map_location='cpu', weights_only=False)
+
+    if "model" in checkpoint:
+        print("Файл уже в правильном формате")
+        return
+
+    if isinstance(checkpoint, dict) and any(k.endswith(".weight") or k.endswith(".bias") for k in checkpoint.keys()):
+        print("Обнаружен 'голый' state_dict. Конвертируем...")
+        fixed = {
+            "model": checkpoint,
+            "epoch": -1,
+            "source": "converted"
+        }
+        torch.save(fixed, output_path)
+        print(f"Сохранено: {output_path}")
+        return
+
+    print("Неизвестный формат чекпоинта")
+    print(f"Ключи: {list(checkpoint.keys())[:10]}")
+
 def main():
+    fix_checkpoint("rf-detr-finetuned.pth", "rf-detr-finetuned.pth")
     wait_for_db()
     Base.metadata.create_all(bind=engine)
 

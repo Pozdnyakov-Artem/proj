@@ -6,7 +6,7 @@
 
 ## Возможности
 
-### Детекция
+### Детекция объектов
 
 - **Модель**: RF-DETR Base (Real-Time Detection Transformer)
 - **Классы**: 80 категорий COCO (person, car, bicycle, truck и др.)
@@ -68,9 +68,11 @@ video_detection_project/
 ├── requirements.txt # Зависимости
 ├── .env # Переменные окружения
 ├── camera_settings.json # Авто-сохраняемые настройки камер
-│
+├── run.bat / run.sh        # Запуск одной командой (БД + приложение)
+├── docker-compose.yml      # PostgreSQL в контейнере
 ├── models.py # SQLAlchemy модели (IMG, Camera)
 ├── database.py # Подключение к БД
+├── rf-detr-finetuned.pth   # Дообученная модель
 │
 ├── detection/
 │ ├── detector.py # Обёртка над RF-DETR
@@ -84,9 +86,11 @@ video_detection_project/
 ├── video/
 │ └── stream_manager.py # Управление видеопотоками
 │
-└── workers/
-  ├── save_worker.py # Сохранение кадров на диск
-  └── db_worker.py # Запись метаданных в БД
+├── workers/
+│ ├── save_worker.py # Сохранение кадров на диск
+│ └── db_worker.py # Запись метаданных в БД
+├── old_version/  # Старые версии
+└── finetune/   # Скрипты для обучения модели
 ```
 
 ---
@@ -107,15 +111,44 @@ source venv/bin/activate
 
 pip install -r requirements.txt
 ````
+### 2. Конфигурация камер: два режима работы
+#### Режим 1: Статическая конфигурация (через .env)
+##### 1. Настройте .env:
+```
+# Камеры (добавляйте по необходимости)
+PATH_CAM_1=rtsp://admin:pass@192.168.1.10/stream
+PATH_CAM_2=rtsp://user:pwd@192.168.1.11/ch1
+PATH_CAM_3=./recordings/warehouse.mp4
 
-### 2. Настройка окружения
+# Параметры по умолчанию
+DEFAULT_CAM_ID=1
+DETECTION_THRESHOLD=0.5
+VIDEO_SCALE=0.5
+```
+##### 2. Обновите config.py
+Раскомментируйте 15 строку и добавть необходимое количество камер
+##### Преимущества:
+Камеры доступны сразу при старте
+Настройки воспроизводятся на любом сервере
+Легко версионировать через Git (кроме .env)
+#### Режим 2: Динамическая конфигурация (через UI)
+Идеально для разработки, тестирования или когда источники меняются часто.
+##### 1. Запустите приложение
+##### 2. Добавьте камеру:
+* Нажмите + ADD CAMERA → введите URL в диалоговом окне → OK
+* Камера мгновенно появится в списке и начнёт транслироваться
+### 3. Настройка окружения
 
 Создайте файл .env в корне проекта:
 
 ```
-# Пути и БД
+# Пути
 SAVE_DIR=./frames
-DATABASE_URL=sqlite:///./detection.db
+# === PostgreSQL ===
+POSTGRES_USER=rfuser
+POSTGRES_PASSWORD=rfpass
+POSTGRES_DB=rfdetr_db
+DATABASE_URL=postgresql+psycopg2://rfuser:rfpass@localhost:5433/rfdetr_db
 
 # Камеры по умолчанию
 DEFAULT_CAM_ID=1
@@ -128,9 +161,17 @@ VIDEO_SCALE=0.5
 DEFAULT_CLASS_IDS=[1]
 ```
 
-### 3. Запуск
+### 3. Запуск одной командой
+#### Windows(`run.bat`)
+#### Linux/Mac (`run.sh`)
+#### Запуск:
+```
+# Windows (PowerShell):
+.\run.bat
 
-`python main.py`
+# Linux/Mac:
+chmod +x run.sh && ./run.sh
+```
 
 ## Использование
 
