@@ -12,9 +12,7 @@ os.makedirs(SAVE_DIR, exist_ok=True)
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 CAMERAS = {
-    1: os.getenv("PATH_CAM_1"),
-    2: os.getenv("PATH_CAM_2"),
-    # 3: os.getenv("PATH_CAM_3", "video_file.mp4"),
+    # 1: os.getenv("PATH_CAM_1")
 }
 DEFAULT_CAM_ID = int(os.getenv("DEFAULT_CAM_ID", "1"))
 

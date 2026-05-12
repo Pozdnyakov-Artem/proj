@@ -1,4 +1,3 @@
-# main.py
 import sys
 import time
 import queue
@@ -16,7 +15,7 @@ from config import (
     SAVE_DIR, CAMERAS, DEFAULT_CAM_ID, DETECTION_THRESHOLD,
     SCALE, DEFAULT_CLASS_IDS, COCO_NAMES
 )
-from database import engine, SessionLocal, Base
+from database import engine, SessionLocal, Base, wait_for_db
 from detection.detector import Detector
 from detection.zone_utils import filter_detections
 from ui.zone_drawer import ZoneDrawer
@@ -76,13 +75,78 @@ def save_camera_settings(settings: dict):
     except Exception as e:
         logger.error(f"Ошибка сохранения настроек: {e}")
 
+def run_camera_setup() -> int | None:
+    win_name = "System Setup"
+    cv.namedWindow(win_name, cv.WINDOW_NORMAL)
+    cv.resizeWindow(win_name, 800, 600)
+
+    btn = (250, 250, 300, 60)  # x, y, w, h
+    clicked = False
+
+    def on_mouse(event, x, y, flags, param):
+        nonlocal clicked
+        if event == cv.EVENT_LBUTTONDOWN:
+            if btn[0] <= x <= btn[0] + btn[2] and btn[1] <= y <= btn[1] + btn[3]:
+                clicked = True
+
+    cv.setMouseCallback(win_name, on_mouse)
+
+    while not stop_event.is_set():
+        frame = np.zeros((600, 800, 3), dtype=np.uint8)
+        cv.putText(frame, "NO CAMERAS CONFIGURED", (150, 150),
+                   cv.FONT_HERSHEY_SIMPLEX, 1.2, (200, 200, 200), 2)
+        cv.putText(frame, "Click button to add your first source", (180, 190),
+                   cv.FONT_HERSHEY_SIMPLEX, 0.5, (150, 150, 150), 1)
+
+        cv.rectangle(frame, (btn[0], btn[1]), (btn[0]+btn[2], btn[1]+btn[3]), (40, 40, 40), -1)
+        cv.rectangle(frame, (btn[0], btn[1]), (btn[0]+btn[2], btn[1]+btn[3]), (0, 200, 200), 2)
+        cv.putText(frame, "+ ADD CAMERA", (btn[0] + 65, btn[1] + 40),
+                   cv.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
+        cv.putText(frame, "[Q] Exit", (360, 550),
+                   cv.FONT_HERSHEY_SIMPLEX, 0.5, (100, 100, 100), 1)
+
+        cv.imshow(win_name, frame)
+        key = cv.waitKey(50) & 0xFF
+
+        if clicked:
+            clicked = False
+            root = tk.Tk()
+            root.withdraw()
+            root.attributes("-topmost", True)
+            root.focus_force()
+            url = simpledialog.askstring("Add Camera", "Enter RTSP/HTTP/MP4 URL:")
+            root.destroy()
+
+            if url and url.strip():
+                new_id = max(CAMERAS.keys(), default=0) + 1
+                CAMERAS[new_id] = url.strip()
+                logger.info(f"Камера {new_id} добавлена: {url.strip()}")
+                cv.destroyAllWindows()
+                return new_id  # Успех → возвращаем ID
+
+        if key in (ord('q'), 27):
+            break
+
+    cv.destroyAllWindows()
+    return None  # Отмена
 
 def main():
+    wait_for_db()
     Base.metadata.create_all(bind=engine)
 
-    detector = Detector(threshold=DETECTION_THRESHOLD,device="cpu")
+    detector = Detector(threshold=DETECTION_THRESHOLD)
     stream_mgr = StreamManager()
     zone_drawer = ZoneDrawer("Detection UI")
+
+    initial_cam_id = None
+    if not CAMERAS:
+        initial_cam_id = run_camera_setup()
+        if initial_cam_id is None:
+            logger.warning("Настройка отменена. Завершение.")
+            return
+        target_cam_id = initial_cam_id
+    else:
+        target_cam_id = DEFAULT_CAM_ID
 
     runtime_cameras = {
         k: (v.split('/')[-1] if v else f"Cam {k}")
@@ -149,8 +213,8 @@ def main():
     t_save.start()
     t_db.start()
 
-    if not stream_mgr.switch_to(DEFAULT_CAM_ID):
-        logger.error("Не удалось открыть камеру по умолчанию")
+    if not stream_mgr.switch_to(target_cam_id):
+        logger.error(f"Не удалось открыть камеру {target_cam_id}")
         sys.exit(1)
 
     orig_w, orig_h = stream_mgr.get_resolution()

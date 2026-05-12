@@ -48,7 +48,6 @@ class CameraSelector:
         tx = self.x1 + (self.BUTTON_WIDTH - text_w) // 2
         ty = self.y1 + (self.BUTTON_HEIGHT + text_h) // 2
         cv.putText(frame, text, (tx, ty), self.FONT, self.FONT_SCALE, (255, 255, 255), 1)
-        cv.putText(frame, "▼", (self.x2 - 15, ty), self.FONT, 0.5, (255, 255, 255), 1)
 
         if self.is_open:
             self._draw_dropdown(frame)

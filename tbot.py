@@ -1,5 +1,9 @@
 import telebot
 from dotenv import load_dotenv
+import os
+
+from pathlib import Path
+Path("subscribers.txt").touch()
 
 load_dotenv()
 bot=telebot.TeleBot(os.getenv("TELEGRAM_API_KEY"))
